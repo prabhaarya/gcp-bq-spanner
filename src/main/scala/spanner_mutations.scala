@@ -40,16 +40,21 @@ object spanner_mutations {
     val projectId = "prabha-poc"
     val instanceId = "test-instance"
     val databaseId = "example-db"
+              
+    // Calculate dynamic batch size based on number of columns
+    val numColumns = df.schema.fields.length
+    val batchSize = Math.max(100 / numColumns, 1) // Adjust divisor as needed
+    print("batchSize-->", batchSize)
 
     df.rdd.foreachPartition { partition =>
       val client = createSpannerClient(projectId, instanceId, databaseId)
       val mutations = ArrayBuffer.empty[Mutation]
 
       partition.foreach { row =>
-        mutations += buildMutation(row)
+        mutations += buildMutation(row, df) // Pass DataFrame to buildMutation
 
 //        Batches 100 mutations into a single transaction when writing to Spanner
-        if (mutations.size >= 100) {
+        if (mutations.size >= batchSize) {
           client.write(mutations.asJava) // Pass the buffer directly
           mutations.clear()
         }
@@ -88,61 +93,29 @@ object spanner_mutations {
   def getValue[T](row: Row, columnName: String)(implicit evidence: Manifest[T]): Option[T] = {
     Option(row.getAs[T](columnName))
   }
+          
+// Function to build mutation dynamically
+def buildMutation(row: Row, df: DataFrame): Mutation = {
+    val builder = Mutation.newInsertOrUpdateBuilder("yellow_trips_enhanced_1")
 
-  // Function to build mutation (adjust based on your schema)
-  def buildMutation(row: Row): Mutation = {
-    /*
-    The buildMutation function constructs a single Mutation object for each row of data extracted from the BigQuery table.
-     */
-    val vendorID = getValue[String](row, "vendor_id").getOrElse("")
-    val pickupDatetime = convertSqlTimestampToCloudTimestamp(row.getAs[SqlTimestamp]("pickup_datetime"))
-    val dropoffDatetime = convertSqlTimestampToCloudTimestamp(row.getAs[SqlTimestamp]("dropoff_datetime"))
-    //    val passengerCount = row.getAs[Long]("passenger_count")
-    val passengerCount = getValue[Long](row, "passenger_count").getOrElse(0L)
-    val tripDistance = convertBigDecimalToSpannerFloat(row, "trip_distance").getOrElse(0.0)
-    val rateCode = getValue[String](row, "rate_code").getOrElse("")
-    val storeAndFwdFlag = getValue[String](row, "store_and_fwd_flag").getOrElse("")
-    val paymentType = getValue[String](row, "payment_type").getOrElse("")
-    val fareAmount =  convertBigDecimalToSpannerFloat(row, "fare_amount").getOrElse(0.0)
-    val extra =  convertBigDecimalToSpannerFloat(row, "extra").getOrElse(0.0)
-    val mtaTax =  convertBigDecimalToSpannerFloat(row, "mta_tax").getOrElse(0.0)
-    val tipAmount =  convertBigDecimalToSpannerFloat(row, "tip_amount").getOrElse(0.0)
-    val tollsAmount =  convertBigDecimalToSpannerFloat(row, "tolls_amount").getOrElse(0.0)
-    val impSurcharge =  convertBigDecimalToSpannerFloat(row, "imp_surcharge").getOrElse(0.0)
-    val airportFee =  convertBigDecimalToSpannerFloat(row, "airport_fee").getOrElse(0.0)
-    val totalAmount =  convertBigDecimalToSpannerFloat(row, "total_amount").getOrElse(0.0)
-    val pickupLocationId = getValue[String](row, "pickup_location_id").getOrElse("")
-    val dropoffLocationId = getValue[String](row, "dropoff_location_id").getOrElse("")
-    val dataFileYear = getValue[Long](row, "data_file_year").getOrElse(0L)
-    val dataFileMonth = getValue[Long](row, "data_file_month").getOrElse(0L)
-    val tripDate = convertSqlDateToCloudDate(row.getAs[SqlDate]("trip_date"))
-    val modNum = getValue[Long](row, "mod_num").getOrElse(0L)
-    val label = getValue[String](row, "label").getOrElse("")
+    df.schema.fields.foreach { field =>
+    val columnName = field.name
+    val columnType = field.dataType
 
-    Mutation.newInsertOrUpdateBuilder("yellow_trips_enhanced_1")
-      .set("vendor_id").to(vendorID)
-      .set("pickup_datetime").to(pickupDatetime)
-      .set("dropoff_datetime").to(dropoffDatetime)
-      .set("passenger_count").to(passengerCount)
-      .set("trip_distance").to(tripDistance)
-      .set("rate_code").to(rateCode)
-      .set("store_and_fwd_flag").to(storeAndFwdFlag)
-      .set("payment_type").to(paymentType)
-      .set("fare_amount").to(fareAmount)
-      .set("extra").to(extra)
-      .set("mta_tax").to(mtaTax)
-      .set("tip_amount").to(tipAmount)
-      .set("tolls_amount").to(tollsAmount)
-      .set("imp_surcharge").to(impSurcharge)
-      .set("airport_fee").to(airportFee)
-      .set("total_amount").to(totalAmount)
-      .set("pickup_location_id").to(pickupLocationId)
-      .set("dropoff_location_id").to(dropoffLocationId)
-      .set("data_file_year").to(dataFileYear)
-      .set("data_file_month").to(dataFileMonth)
-      .set("trip_date").to(tripDate)
-      .set("mod_num").to(modNum)
-      .set("label").to(label)
-      .build()
+    val spannerValue: Value = columnType match { // Specify Value as the return type
+        case org.apache.spark.sql.types.StringType => Value.string(getValue[String](row, columnName).getOrElse(""))
+        case org.apache.spark.sql.types.LongType => Value.int64(getValue[Long](row, columnName).getOrElse(0L))
+        case org.apache.spark.sql.types.TimestampType => Value.timestamp(convertSqlTimestampToCloudTimestamp(row.getAs[SqlTimestamp](columnName)))
+        case org.apache.spark.sql.types.DateType => Value.date(convertSqlDateToCloudDate(row.getAs[SqlDate](columnName)))
+        case org.apache.spark.sql.types.DecimalType() => Value.float64(convertBigDecimalToSpannerFloat(row, columnName).getOrElse(0.0))
+        // Add other data type conversions as needed
+        case _ => throw new IllegalArgumentException(s"Unsupported data type: ${columnType}")
+    }
+
+    builder.set(columnName).to(spannerValue) // Use the Spanner Value
+    }
+
+    builder.build()
+
   }
 }
