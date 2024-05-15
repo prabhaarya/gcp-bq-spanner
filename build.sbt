@@ -8,10 +8,12 @@ lazy val root = (project in file("."))
   )
 val sparkVersion = "3.5.1"
 val sparkSpanner = "6.45.1"
+val sparkBigQuery = "0.38.0"
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion,
   "org.apache.spark" %% "spark-sql"  % sparkVersion,
-  "com.google.cloud" % "google-cloud-spanner" % sparkSpanner,
+  "com.google.cloud" % "google-cloud-spanner" % sparkSpanner,  
+  "com.google.cloud.spark" % "spark-bigquery-with-dependencies_2.12" % sparkBigQuery,
 
 )
