@@ -13,7 +13,6 @@
 //      limitations under the License.
 
 import org.apache.spark.sql.SparkSession
-import com.google.cloud.spark.bigquery._
 import scala.collection.JavaConverters._
 import java.util.ArrayList
 import com.google.cloud.spanner.{
@@ -35,7 +34,6 @@ object spanner_mutations {
     val spark = SparkSession
       .builder()
       .appName("spark-spanner-demo")
-      .config("spark.master", "local")      
       .config("spark.executor.memory", "8g") // Executor memory (adjust as needed)
       .config("spark.driver.memory", "4g") // Driver memory (adjust as needed)
       .config("spark.executor.instances", "13") // Number of executor instances
@@ -43,8 +41,7 @@ object spanner_mutations {
       .getOrCreate()
     import spark.implicits._
 
-    val old_df =
-      spark.read.bigquery("prabha-poc.DATAHUB_01B.yellow_trips_enhanced")
+    val old_df = spark.read.format("bigquery").load("prabha-poc.DATAHUB_01B.yellow_trips_enhanced")
     old_df.createOrReplaceTempView("old_df")
     val df = spark.sql("SELECT * FROM old_df")
     df.printSchema()
