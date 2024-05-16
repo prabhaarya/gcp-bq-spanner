@@ -55,8 +55,11 @@ object spanner_mutations {
     // Create an accumulator to track total mutations
     val totalMutations = spark.sparkContext.longAccumulator("Total Mutations")
 
-    val maxMutationSizeInBytes = 2 * 1024 * 1024 // 2MB
-    val maxMutationsPerTransaction = 10000 // Spanner's limit, adjust if needed
+    // Counter for mutations in the current transaction
+    var mutationsInTransaction = 0 
+
+    val maxMutationSizeInBytes = 100 * 1024 * 1024 // 100MB
+    val maxMutationsPerTransaction = 80000 // Spanner's limit, adjust if needed
 
     // Estimate average row size in bytes (this is a simplified estimation)
     val estimatedRowSizeInBytes = df.schema.fields.map { field =>
@@ -72,17 +75,25 @@ object spanner_mutations {
       }
     }.sum
 
-    // Calculate batch size
+    // First: Calculate batch size
     val batchSize = Math
       .min(
         maxMutationSizeInBytes / estimatedRowSizeInBytes, // Limit by mutation size
         maxMutationsPerTransaction
       )
       .toInt
+      
+    // Second: Calculate dynamic batch size based on number of columns
+    val numColumns = df.schema.fields.length
+    val batchSize_cal = Math.max(80000 / numColumns, 1) // Adjust divisor as needed
+
+    // Choose best out of these two
+    val spanner_batch_size = Math.min(batchSize,batchSize_cal).toInt
 
     df.rdd.foreachPartition { partition =>
       val client = createSpannerClient(projectId, instanceId, databaseId)
       val mutations = ArrayBuffer.empty[Mutation]
+      var mutationsInTransaction = 0 // Counter for mutations in the current transaction
 
       partition.foreach { row =>
         mutations += buildMutation(
@@ -90,12 +101,14 @@ object spanner_mutations {
           schema
         ) // Pass DataFrame to buildMutation
         totalMutations.add(1) // Increment accumulator
+        mutationsInTransaction += 1 // Increment transaction-specific counter
 
         // Use the dynamic batch size for mutations into single transaction to write spanner
         // Check if accumulated mutations reached the batch size
-        if (totalMutations.value >= batchSize) {
+        if (mutationsInTransaction >= spanner_batch_size) {
           client.write(mutations.asJava) // Pass the buffer directly
           mutations.clear()
+          mutationsInTransaction = 0 // Reset transaction counter
           totalMutations.reset() // Reset accumulator after write
         }
       }
