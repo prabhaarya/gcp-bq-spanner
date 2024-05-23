@@ -15,6 +15,34 @@
 
 object main {
   def main(args: Array[String]): Unit = {
-    spanner_mutations.execute_pipeline()
+    println("Hello World!!")
+//    spanner_mutations.execute_pipeline()
+    // ---------PARSE COMMAND LINE ARGUMENTS-------------------------------------
+        val numArgs = 6
+        if (args.length != numArgs) {
+          throw new IllegalArgumentException(
+            s"Exactly $numArgs arguments are required"
+          )
+        }
+        val prj = args(0)
+        // source :: BigQuery Dataset & Table
+        val bqDataset = args(1)
+        val bqTable = args(2)
+        // sink :: Spanner instance, database & table
+        val inst = args(3)
+        val db = args(4)
+        val tbl = args(5)
+
+    // ---------Launch pipeline-------------------------------------
+    val pipeline =
+      new spanner_mutations(
+        prj,
+        bqDataset,
+        bqTable,
+        inst,
+        db,
+        tbl
+      )
+    pipeline.execute_pipeline()
   }
 }

@@ -28,7 +28,16 @@ import com.google.cloud.{Date => CloudDate, Timestamp => CloudTimestamp}
 import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.util.LongAccumulator
 
-object spanner_mutations {
+
+
+class spanner_mutations (
+                          var prj: String,
+                          var bqDataset: String,
+                          var bqTable: String,
+                          var inst: String,
+                          var db: String,
+                          var tbl: String
+                        ) extends Serializable {
 
   def execute_pipeline() = {
     val spark = SparkSession
@@ -41,13 +50,9 @@ object spanner_mutations {
       .getOrCreate()
     import spark.implicits._
 
-    val old_df = spark.read.format("bigquery").load("prabha-poc.DATAHUB_01B.yellow_trips_enhanced")
+    val old_df = spark.read.format("bigquery").load(s"$prj.$bqDataset.$bqTable")
     old_df.createOrReplaceTempView("old_df")
     val df = spark.sql("SELECT * FROM old_df")
-    df.printSchema()
-    val projectId = "prabha-poc"
-    val instanceId = "test-instance"
-    val databaseId = "example-db"
     
     // Get the DataFrame schema on the driver
     val schema = df.schema
@@ -91,14 +96,15 @@ object spanner_mutations {
     val spanner_batch_size = Math.min(batchSize,batchSize_cal).toInt
 
     df.rdd.foreachPartition { partition =>
-      val client = createSpannerClient(projectId, instanceId, databaseId)
+      val client = createSpannerClient(s"$prj", s"$inst", s"$db")
       val mutations = ArrayBuffer.empty[Mutation]
       var mutationsInTransaction = 0 // Counter for mutations in the current transaction
 
       partition.foreach { row =>
         mutations += buildMutation(
           row,
-          schema
+          schema,
+          s"$tbl"
         ) // Pass DataFrame to buildMutation
         totalMutations.add(1) // Increment accumulator
         mutationsInTransaction += 1 // Increment transaction-specific counter
@@ -170,7 +176,7 @@ object spanner_mutations {
       row: Row,
       schema: org.apache.spark.sql.types.StructType
   ): Mutation = {
-    val builder = Mutation.newInsertOrUpdateBuilder("yellow_trips_enhanced_1")
+    val builder = Mutation.newInsertOrUpdateBuilder(s"$tbl")
 
     schema.fields.foreach { field =>
       val columnName = field.name
