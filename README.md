@@ -78,7 +78,9 @@ The repository contains Spark Scala code crafted to retrieve data from BigQuery 
     gcloud dataproc jobs submit spark --cluster ${CLUSTER_NAME} \
         --region=us-central1 \
         --jar=${GCS_BUCKET_JARS}/${APP_JAR_NAME} \
-        --jars=${GCS_BUCKET_JARS}/google-cloud-spanner-6.45.1.jar,gs://test-lbg-cloudera/jars/google-cloud-spanner-jdbc-2.17.1-single-jar-with-dependencies.jar
+        --jars=${GCS_BUCKET_JARS}/google-cloud-spanner-6.45.1.jar,gs://test-lbg-cloudera/jars/google-cloud-spanner-jdbc-2.17.1-single-jar-with-dependencies.jar \
+        -- ${PROJECT_ID} ${BQ_DATASET} ${BQ_TABLE} ${SPANNER_INSTANCE} ${SPANNER_DB} ${SPANNER_TABLE}
+
     ```
 ### Notes - getting dev environment to match dataproc image
 
