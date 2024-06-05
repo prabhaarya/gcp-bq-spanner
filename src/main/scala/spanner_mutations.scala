@@ -174,7 +174,8 @@ class spanner_mutations (
 // Function to build mutation dynamically
   def buildMutation(
       row: Row,
-      schema: org.apache.spark.sql.types.StructType
+      schema: org.apache.spark.sql.types.StructType, 
+      tbl: String
   ): Mutation = {
     val builder = Mutation.newInsertOrUpdateBuilder(s"$tbl")
 
